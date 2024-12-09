@@ -2,6 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const sqlite3 = require("sqlite3");
 const axios = require("axios").default;
+const { TwitterApi } = require('twitter-api-v2')
+const userClient = new TwitterApi({
+    appKey: 'process.env.X_CLIENT_ID',
+    appSecret: 'process.env.X_CLIENT_SECRET',
+    accessToken: 'process.env.X_ACCESS_TOKEN',
+    accessSecret: 'process.env.X_ACCESS_SECRET',
+});
+const v2Client = userClient.v2;
 const app = express();
 const port = 3000;
 
@@ -13,7 +21,8 @@ const db = new sqlite3.Database("./main.db", (err) => {
             //table生成（無ければ）
             db.run("create table if not exists members( \
                 id integer primary key, \
-                token nverchar(50) \
+                fsq_token nverchar(50), \
+                x_token nverchar(50) \
             )", (err) => {
                 if (err) {
                     console.error("table error: " + err.message);
@@ -29,21 +38,41 @@ app.use(express.urlencoded({
 }));
 
 app.post('/webhook', (req, res) => {
+    console.log(req.body)
     console.log('Received webhook request from user_id:', JSON.parse(req.body.user).id);
     db.get("select * from members where id = ?", JSON.parse(req.body.user).id, (err, row) => {
         if (err) {
             res.status(400).send('Webhook received failed!')
         } else {
+            console.log(row)
             if (row) {
-                axios.get('https://api.foursquare.com/v2/users/self/checkins', {
+                axios.get(`https://api.foursquare.com/v2/checkins/${JSON.parse(req.body.checkin).id}`, {
                     params: {
                         v: "20241201",
-                        limit: 1,
-                        offset: 0,
-                        oauth_token: row.token
+                        oauth_token: row.fsq_token
                     }
                 }).then((response) => {
-                    console.log(response.data.response.checkins.items[0])
+                    checkin = response.data.response.checkin
+                    console.log(checkin)
+                    if(checkin['shout']) {
+                        post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
+                    } else {
+                        post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}`
+                    }
+                    if(checkin.photos.count > 0) {
+                        let p_url = checkin.photos.items[0]
+                        axios.get(`${p_url.prefix}original${p_url.suffix}`, {
+                            'responseType': 'arraybuffer',
+                            'headers': {
+                              'Content-Type': 'image/png'
+                            }
+                        })
+                        .then((response)=>{
+                            console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
+                        })
+                    }
+                    console.log(post_msg)
+                    // v2Client.tweet(post_msg)
                     res.status(200).send('Webhook received successfully!');
                 }).catch((err) => {
                     console.error(err)
@@ -88,7 +117,7 @@ app.get('/login', (req, res) => {
                         console.log(row)
                     })
                     let user_id = response.data.response.user.id
-                    const stmt = db.prepare("insert into members(id,token) values(?,?) on conflict(id) do update set token = excluded.token");
+                    const stmt = db.prepare("insert into members(id,fsq_token) values(?,?) on conflict(id) do update set fsq_token = excluded.fsq_token");
                     stmt.run(user_id, oauth_token, (err, result) => {
                         if (err) {
                             res.status(400).json({
@@ -113,6 +142,10 @@ app.get('/login', (req, res) => {
             })
     }
     // res.status(200).send('Webhook received successfully!');
+})
+
+app.get('/xlogin', (req, res) => {
+
 })
 
 app.listen(port, () => {
