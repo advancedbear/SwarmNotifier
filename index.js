@@ -5,10 +5,10 @@ const sqlite3 = require("sqlite3");
 const axios = require("axios").default;
 const { TwitterApi } = require('twitter-api-v2')
 const userClient = new TwitterApi({
-    clientId: process.env.X_CLIENT_ID,
-    clientSecret: process.env.X_CLIENT_SECRET,
-    // appKey: process.env.X_CLIENT_ID,
-    // appSecret: process.env.X_CLIENT_SECRET,
+    // clientId: process.env.X_CLIENT_ID,
+    // clientSecret: process.env.X_CLIENT_SECRET,
+    appKey: process.env.X_CLIENT_ID,
+    appSecret: process.env.X_CLIENT_SECRET,
     // accessToken: process.env.X_ACCESS_TOKEN,
     // accessSecret: process.env.X_ACCESS_SECRET,
 });
@@ -24,7 +24,8 @@ const db = new sqlite3.Database("./main.db", (err) => {
             db.run("create table if not exists members( \
                 id integer primary key, \
                 fsq_token nverchar(50), \
-                x_token nverchar(50) \
+                x_token nverchar(100), \
+                x_secret nverchar(100) \
             )", (err) => {
                 if (err) {
                     console.error("table error: " + err.message);
@@ -77,13 +78,18 @@ app.post('/webhook', (req, res) => {
                         })
                             .then((response) => {
                                 console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
-                                const x_client = new TwitterApi(row.x_token);
+                                const x_client = new TwitterApi({
+                                    appKey: process.env.X_CLIENT_ID,
+                                    appSecret: process.env.X_CLIENT_SECRET,
+                                    accessToken: row.x_token,
+                                    accessSecret: row.x_secret
+                                });
                                 x_client.v1.verifyCredentials()
-                                x_client.v1.uploadMedia(Buffer.from(response.data),  {mimeType: 'Jpeg'})
+                                x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
                                     .then((mediaId) => {
                                         x_client.v2.tweet({
                                             text: post_msg,
-                                            media: mediaId
+                                            media: { media_ids: [mediaId] }
                                         }).then((result) => {
                                             console.log(result)
                                             res.status(200).send('Webhook received successfully!');
@@ -168,42 +174,37 @@ app.get('/login', (req, res) => {
 })
 
 app.get('/xregister', async (req, res) => {
-    const { url, codeVerifier, state } = userClient.generateOAuth2AuthLink(process.env.X_REDIRECT_URL, { scope: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'] });
-    req.session.codeVerifier = codeVerifier
-    req.session.state = state
+    const authLink = await userClient.generateAuthLink(process.env.X_REDIRECT_URL);
+    req.session.oauth_token = authLink.oauth_token
+    req.session.oauth_token_secret = authLink.oauth_token_secret
     console.log(req.session)
-    console.log(url)
-    res.redirect(url)
+    console.log(authLink.url)
+    res.redirect(authLink.url)
 })
 
 app.get('/xlogin', async (req, res) => {
-    console.log(req.query)
-    console.log(req.session.codeVerifier)
-    // Extract state and code from query string
-    const { state, code } = req.query;
-    // Get the saved codeVerifier from session
-    const { codeVerifier, state: sessionState } = req.session;
+    // Extract tokens from query string
+    const { oauth_token, oauth_verifier } = req.query;
+    // Get the saved oauth_token_secret from session
+    const { oauth_token_secret } = req.session;
 
-    if (!codeVerifier || !state || !sessionState || !code) {
+    if (!oauth_token || !oauth_verifier || !oauth_token_secret) {
         return res.status(400).send('You denied the app or your session expired!');
     }
-    if (state !== sessionState) {
-        return res.status(400).send('Stored tokens didnt match!');
-    }
 
-    // Obtain access token
-    const client = new TwitterApi({ clientId: process.env.X_CLIENT_ID, clientSecret: process.env.X_CLIENT_SECRET });
+    // Obtain the persistent tokens
+    // Create a client from temporary tokens
+    const client = new TwitterApi({
+        appKey: process.env.X_CLIENT_ID,
+        appSecret: process.env.X_CLIENT_SECRET,
+        accessToken: oauth_token,
+        accessSecret: oauth_token_secret,
+    });
 
-    client.loginWithOAuth2({ code, codeVerifier, redirectUri: process.env.X_REDIRECT_URL })
-        .then(async ({ client: loggedClient, accessToken, refreshToken, expiresIn }) => {
-            // {loggedClient} is an authenticated client in behalf of some user
-            // Store {accessToken} somewhere, it will be valid until {expiresIn} is hit.
-            // If you want to refresh your token later, store {refreshToken} (it is present if 'offline.access' has been given as scope)
-            // Example request
-            const { data: userObject } = await loggedClient.v2.me();
-
-            const stmt = db.prepare("insert into members(id,x_token) values(?,?) on conflict(id) do update set x_token = excluded.x_token");
-            stmt.run(req.session.user_id, accessToken, (err, result) => {
+    client.login(oauth_verifier)
+        .then(({ client: loggedClient, accessToken, accessSecret }) => {
+            const stmt = db.prepare("insert into members(id,x_token,x_secret) values(?,?,?) on conflict(id) do update set x_token = excluded.x_token, x_secret = excluded.x_secret");
+            stmt.run(req.session.user_id, accessToken, accessSecret, async (err, result) => {
                 if (err) {
                     res.status(400).json({
                         "status": "error",
@@ -214,7 +215,7 @@ app.get('/xlogin', async (req, res) => {
                     res.status(200).json({
                         "status": "ok",
                         "Foursquare_UserID": req.session.user_id,
-                        "x_UserID": userObject.name
+                        "x_UserID": await loggedClient.currentUser()
                     });
                 }
             })
