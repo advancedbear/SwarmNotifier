@@ -4,14 +4,6 @@ const session = require('express-session')
 const sqlite3 = require("sqlite3");
 const axios = require("axios").default;
 const { TwitterApi } = require('twitter-api-v2')
-const userClient = new TwitterApi({
-    // clientId: process.env.X_CLIENT_ID,
-    // clientSecret: process.env.X_CLIENT_SECRET,
-    appKey: process.env.X_CLIENT_ID,
-    appSecret: process.env.X_CLIENT_SECRET,
-    // accessToken: process.env.X_ACCESS_TOKEN,
-    // accessSecret: process.env.X_ACCESS_SECRET,
-});
 const app = express();
 const port = 3000;
 
@@ -61,8 +53,19 @@ app.post('/webhook', (req, res) => {
                         oauth_token: row.fsq_token
                     }
                 }).then((response) => {
+                    const x_client = new TwitterApi({
+                        appKey: process.env.X_CLIENT_ID,
+                        appSecret: process.env.X_CLIENT_SECRET,
+                        accessToken: row.x_token,
+                        accessSecret: row.x_secret
+                    });
                     checkin = response.data.response.checkin
                     console.log(checkin)
+                    if (!checkin.shares['twitter']) {
+                        console.log("Webhook does not want to share twitter.")
+                        res.status(200).send('Webhook received successfully!')
+                        return
+                    }
                     if (checkin['shout']) {
                         post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
                     } else {
@@ -78,12 +81,6 @@ app.post('/webhook', (req, res) => {
                         })
                             .then((response) => {
                                 console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
-                                const x_client = new TwitterApi({
-                                    appKey: process.env.X_CLIENT_ID,
-                                    appSecret: process.env.X_CLIENT_SECRET,
-                                    accessToken: row.x_token,
-                                    accessSecret: row.x_secret
-                                });
                                 x_client.v1.verifyCredentials()
                                 x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
                                     .then((mediaId) => {
@@ -103,6 +100,15 @@ app.post('/webhook', (req, res) => {
                                     })
                             }).catch((err) => {
                                 console.log("image download", err)
+                                res.status(400).send('Webhook received failed!')
+                            })
+                    } else {
+                        x_client.v2.tweet({ text: post_msg })
+                            .then((result) => {
+                                console.log(result)
+                                res.status(200).send('Webhook received successfully!');
+                            }).catch((err) => {
+                                console.log("post_tweet", err)
                                 res.status(400).send('Webhook received failed!')
                             })
                     }
@@ -144,7 +150,6 @@ app.get('/login', (req, res) => {
                         oauth_token: oauth_token
                     }
                 }).then((response) => {
-                    // console.log(response.data)
                     db.get("select * from members", (err, row) => {
                         console.log(row)
                     })
@@ -168,12 +173,15 @@ app.get('/login', (req, res) => {
                         "message": JSON.stringify(err)
                     });
                 })
-
             })
     }
 })
 
 app.get('/xregister', async (req, res) => {
+    const userClient = new TwitterApi({
+        appKey: process.env.X_CLIENT_ID,
+        appSecret: process.env.X_CLIENT_SECRET,
+    });
     const authLink = await userClient.generateAuthLink(process.env.X_REDIRECT_URL);
     req.session.oauth_token = authLink.oauth_token
     req.session.oauth_token_secret = authLink.oauth_token_secret
@@ -183,25 +191,21 @@ app.get('/xregister', async (req, res) => {
 })
 
 app.get('/xlogin', async (req, res) => {
-    // Extract tokens from query string
     const { oauth_token, oauth_verifier } = req.query;
-    // Get the saved oauth_token_secret from session
     const { oauth_token_secret } = req.session;
 
     if (!oauth_token || !oauth_verifier || !oauth_token_secret) {
         return res.status(400).send('You denied the app or your session expired!');
     }
 
-    // Obtain the persistent tokens
-    // Create a client from temporary tokens
-    const client = new TwitterApi({
+    const tempClient = new TwitterApi({
         appKey: process.env.X_CLIENT_ID,
         appSecret: process.env.X_CLIENT_SECRET,
         accessToken: oauth_token,
         accessSecret: oauth_token_secret,
     });
 
-    client.login(oauth_verifier)
+    tempClient.login(oauth_verifier)
         .then(({ client: loggedClient, accessToken, accessSecret }) => {
             const stmt = db.prepare("insert into members(id,x_token,x_secret) values(?,?,?) on conflict(id) do update set x_token = excluded.x_token, x_secret = excluded.x_secret");
             stmt.run(req.session.user_id, accessToken, accessSecret, async (err, result) => {
@@ -215,7 +219,7 @@ app.get('/xlogin', async (req, res) => {
                     res.status(200).json({
                         "status": "ok",
                         "Foursquare_UserID": req.session.user_id,
-                        "x_UserID": await loggedClient.currentUser()
+                        "x_UserID": (await loggedClient.currentUser()).screen_name
                     });
                 }
             })
