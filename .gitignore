@@ -1,3 +1,4 @@
 main.db
 node_modules
 .env
+ratelimit.json

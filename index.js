@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session')
 const path = require("path");
+const fs = require("fs")
 const sqlite3 = require("sqlite3");
 const axios = require("axios").default;
 const { TwitterApi } = require('twitter-api-v2')
@@ -87,8 +88,8 @@ app.post('/webhook', (req, res) => {
                             return
                         }
                         location = ""
-                        if(checkin.venue.location.state) {
-                            location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city: ""}`
+                        if (checkin.venue.location.state) {
+                            location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city : ""}`
                         }
                         if (checkin['shout']) {
                             post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
@@ -107,16 +108,18 @@ app.post('/webhook', (req, res) => {
                                     console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
                                     x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
                                         .then((mediaId) => {
-                                            x_client.v2.tweet({
+                                            x_client.v2.post('tweets', {
                                                 text: post_msg,
                                                 media: { media_ids: [mediaId] }
-                                            }).then((result) => {
-                                                console.log(result)
-                                                res.status(200).send('Webhook received successfully!');
-                                            }).catch((err) => {
-                                                console.log("post_tweet", err)
-                                                res.status(400).send('Webhook received failed!')
-                                            })
+                                            }, { fullResponse: true })
+                                                .then((result) => {
+                                                    console.log("Twitter POST Tweet Rate Limit: ", result.rateLimit)
+                                                    fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "))
+                                                    res.status(200).send('Webhook received successfully!');
+                                                }).catch((err) => {
+                                                    console.log("post_tweet", err)
+                                                    res.status(400).send('Webhook received failed!')
+                                                })
                                         }).catch((err) => {
                                             console.log("upload media", err)
                                             res.status(400).send('Webhook received failed!')
@@ -147,6 +150,10 @@ app.post('/webhook', (req, res) => {
         }
     })
 });
+
+app.get('/ratelimit', (req, res) => {
+    res.sendFile(path.join(__dirname, "ratelimit.json"))
+})
 
 app.get('/register', (req, res) => {
     console.log('Received register request.');
