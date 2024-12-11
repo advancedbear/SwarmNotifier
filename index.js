@@ -1,10 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session')
+const path = require("path");
 const sqlite3 = require("sqlite3");
 const axios = require("axios").default;
 const { TwitterApi } = require('twitter-api-v2')
 const app = express();
+const router = express.Router();
 const port = 3000;
 
 const db = new sqlite3.Database("./main.db", (err) => {
@@ -27,6 +29,8 @@ const db = new sqlite3.Database("./main.db", (err) => {
     }
 });
 
+app.set("view engine", "ejs");
+app.set("views", "views");
 app.use(express.json());
 app.use(express.urlencoded({
     extended: true
@@ -39,8 +43,19 @@ app.use(session({
 }))
 
 app.get('/', (req, res) => {
-    res.sendFile('./index.html')
+    res.sendFile(path.join(__dirname, "index.html"))
 })
+
+app.use(
+    router.get("/registered", (req, res, next) => {
+        self = {
+            x_user: req.query.x_id || "NOT LOGGED IN",
+            fsq_user: req.query.fsq_id || "NOT LOGGED IN",
+            status: req.query.status || "disconnected"
+        }
+        res.render("registered", self);
+    })
+);
 
 app.post('/webhook', (req, res) => {
     console.log(req.body)
@@ -160,6 +175,7 @@ app.get('/login', (req, res) => {
                     })
                     let user_id = response.data.response.user.id
                     req.session.user_id = user_id
+                    req.session.fsq_user = response.data.response.user.handle
                     const stmt = db.prepare("insert into members(id,fsq_token) values(?,?) on conflict(id) do update set fsq_token = excluded.fsq_token");
                     stmt.run(user_id, oauth_token, (err, result) => {
                         if (err) {
@@ -215,17 +231,10 @@ app.get('/xlogin', async (req, res) => {
             const stmt = db.prepare("insert into members(id,x_token,x_secret) values(?,?,?) on conflict(id) do update set x_token = excluded.x_token, x_secret = excluded.x_secret");
             stmt.run(req.session.user_id, accessToken, accessSecret, async (err, result) => {
                 if (err) {
-                    res.status(400).json({
-                        "status": "error",
-                        "message": err.message
-                    });
+                    res.redirect(`/registered?status=disconnected`)
                     return;
                 } else {
-                    res.status(200).json({
-                        "status": "ok",
-                        "Foursquare_UserID": req.session.user_id,
-                        "x_UserID": (await loggedClient.currentUser()).screen_name
-                    });
+                    res.redirect(`/registered?status=connected&fsq_id=${req.session.fsq_user}&x_id=${(await loggedClient.currentUser()).screen_name}`)
                 }
             })
         })
