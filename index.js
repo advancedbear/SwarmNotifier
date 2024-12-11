@@ -38,6 +38,10 @@ app.use(session({
     cookie: { maxAge: 60 * 60 * 1000 }
 }))
 
+app.get('/', (req, res) => {
+    res.sendFile('./index.html')
+})
+
 app.post('/webhook', (req, res) => {
     console.log(req.body)
     console.log('Received webhook request from user_id:', JSON.parse(req.body.user).id);
@@ -47,75 +51,76 @@ app.post('/webhook', (req, res) => {
         } else {
             console.log(row)
             if (row) {
-                axios.get(`https://api.foursquare.com/v2/checkins/${JSON.parse(req.body.checkin).id}`, {
-                    params: {
-                        v: "20241201",
-                        oauth_token: row.fsq_token
-                    }
-                }).then((response) => {
-                    const x_client = new TwitterApi({
-                        appKey: process.env.X_CLIENT_ID,
-                        appSecret: process.env.X_CLIENT_SECRET,
-                        accessToken: row.x_token,
-                        accessSecret: row.x_secret
-                    });
-                    checkin = response.data.response.checkin
-                    console.log(checkin)
-                    if (!checkin.shares['twitter']) {
-                        console.log("Webhook does not want to share twitter.")
-                        res.status(200).send('Webhook received successfully!')
-                        return
-                    }
-                    if (checkin['shout']) {
-                        post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
-                    } else {
-                        post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}`
-                    }
-                    if (checkin.photos.count > 0) {
-                        let p_url = checkin.photos.items[0]
-                        axios.get(`${p_url.prefix}original${p_url.suffix}`, {
-                            'responseType': 'arraybuffer',
-                            'headers': {
-                                'Content-Type': 'image/jpeg'
-                            }
-                        })
-                            .then((response) => {
-                                console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
-                                x_client.v1.verifyCredentials()
-                                x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
-                                    .then((mediaId) => {
-                                        x_client.v2.tweet({
-                                            text: post_msg,
-                                            media: { media_ids: [mediaId] }
-                                        }).then((result) => {
-                                            console.log(result)
-                                            res.status(200).send('Webhook received successfully!');
+                setTimeout(() => {
+                    axios.get(`https://api.foursquare.com/v2/checkins/${JSON.parse(req.body.checkin).id}`, {
+                        params: {
+                            v: "20241201",
+                            oauth_token: row.fsq_token
+                        }
+                    }).then((response) => {
+                        const x_client = new TwitterApi({
+                            appKey: process.env.X_CLIENT_ID,
+                            appSecret: process.env.X_CLIENT_SECRET,
+                            accessToken: row.x_token,
+                            accessSecret: row.x_secret
+                        });
+                        checkin = response.data.response.checkin
+                        console.log(checkin)
+                        if (!checkin.shares['twitter']) {
+                            console.log("Webhook does not want to share twitter.")
+                            res.status(200).send('Webhook received successfully!')
+                            return
+                        }
+                        if (checkin['shout']) {
+                            post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
+                        } else {
+                            post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}`
+                        }
+                        if (checkin.photos.count > 0) {
+                            let p_url = checkin.photos.items[0]
+                            axios.get(`${p_url.prefix}original${p_url.suffix}`, {
+                                'responseType': 'arraybuffer',
+                                'headers': {
+                                    'Content-Type': 'image/jpeg'
+                                }
+                            })
+                                .then((response) => {
+                                    console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
+                                    x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
+                                        .then((mediaId) => {
+                                            x_client.v2.tweet({
+                                                text: post_msg,
+                                                media: { media_ids: [mediaId] }
+                                            }).then((result) => {
+                                                console.log(result)
+                                                res.status(200).send('Webhook received successfully!');
+                                            }).catch((err) => {
+                                                console.log("post_tweet", err)
+                                                res.status(400).send('Webhook received failed!')
+                                            })
                                         }).catch((err) => {
-                                            console.log("post_tweet", err)
+                                            console.log("upload media", err)
                                             res.status(400).send('Webhook received failed!')
                                         })
-                                    }).catch((err) => {
-                                        console.log("upload media", err)
-                                        res.status(400).send('Webhook received failed!')
-                                    })
-                            }).catch((err) => {
-                                console.log("image download", err)
-                                res.status(400).send('Webhook received failed!')
-                            })
-                    } else {
-                        x_client.v2.tweet({ text: post_msg })
-                            .then((result) => {
-                                console.log(result)
-                                res.status(200).send('Webhook received successfully!');
-                            }).catch((err) => {
-                                console.log("post_tweet", err)
-                                res.status(400).send('Webhook received failed!')
-                            })
-                    }
-                }).catch((err) => {
-                    console.error(err)
-                    res.status(400).send('Webhook received failed!')
-                })
+                                }).catch((err) => {
+                                    console.log("image download", err)
+                                    res.status(400).send('Webhook received failed!')
+                                })
+                        } else {
+                            x_client.v2.tweet({ text: post_msg })
+                                .then((result) => {
+                                    console.log(result)
+                                    res.status(200).send('Webhook received successfully!');
+                                }).catch((err) => {
+                                    console.log("post_tweet", err)
+                                    res.status(400).send('Webhook received failed!')
+                                })
+                        }
+                    }).catch((err) => {
+                        console.error(err)
+                        res.status(400).send('Webhook received failed!')
+                    })
+                }, 15000)
             } else {
                 console.log('User has not been registered.')
                 res.status(400).send('Webhook received failed!')
