@@ -81,15 +81,19 @@ app.post('/webhook', (req, res) => {
                         });
                         checkin = response.data.response.checkin
                         console.log(checkin)
-                        if (!checkin.shares['twitter']) {
+                        if (!checkin['shares']) {
                             console.log("Webhook does not want to share twitter.")
                             res.status(200).send('Webhook received successfully!')
                             return
                         }
+                        location = ""
+                        if(checkin.venue.location.state) {
+                            location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city: ""}`
+                        }
                         if (checkin['shout']) {
-                            post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
+                            post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
                         } else {
-                            post_msg = `I'm at ${checkin.venue.name} in ${checkin.venue.location.state} ${checkin.venue.location.city}\n${checkin.checkinShortUrl}`
+                            post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}`
                         }
                         if (checkin.photos.count > 0) {
                             let p_url = checkin.photos.items[0]
