@@ -1,0 +1,17 @@
+version: '2'
+
+services:
+  swarmtool:
+    build: "."
+    container_name: "swarmtool"
+    restart: always
+    ports:
+    - "3000:3000"
+    volumes:
+    - ".env:/app/.env:ro"
+  tunnel:
+    restart: always
+    image: cloudflare/cloudflared
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=*****************
