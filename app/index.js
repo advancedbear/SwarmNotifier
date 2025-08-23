@@ -10,9 +10,30 @@ const app = express();
 const router = express.Router();
 const port = 3000;
 
+const logger = (level, message) => {
+    switch(level) {
+        case 0:
+            console.log(`[INFO]  ${message}`)
+            break
+        case 1:
+            console.log(`[WARN]  ${message}`)
+            break
+        case 2:
+            console.error(`[ERROR] ${message}`)
+            break
+        case 3:
+            console.error(`[CRIT]  ${message}`)
+            break
+        default: 
+            if(process.env.DEBUGMODE == '1') {
+                console.log(`[DEBUG] ${message}`)
+            }
+    }
+}
+
 const db = new sqlite3.Database(path.resolve(__dirname, "main.db"), (err) => {
     if (err) {
-        console.error("database error: " + err.message);
+        logger(2, "database error: " + err.message);
     } else {
         db.serialize(() => {
             //table生成（無ければ）
@@ -23,13 +44,12 @@ const db = new sqlite3.Database(path.resolve(__dirname, "main.db"), (err) => {
                 x_secret nverchar(100) \
             )", (err) => {
                 if (err) {
-                    console.error("table error: " + err.message);
+                    logger(2, "table error: " + err.message);
                 }
             });
         });
     }
 });
-
 app.set("view engine", "ejs");
 app.set("views", "views");
 app.use(express.json());
@@ -59,13 +79,13 @@ app.use(
 );
 
 app.post('/webhook', (req, res) => {
-    console.log(req.body)
-    console.log('Received webhook request from user_id:', JSON.parse(req.body.user).id);
+    if(!req.body.user) logger(1, 'Request is not Foursquare Webhook.')
+    logger(0, 'Received webhook request from user_id:', JSON.parse(req.body.user).id);
     db.get("select * from members where id = ?", JSON.parse(req.body.user).id, (err, row) => {
         if (err) {
             res.status(400).send('Webhook received failed!')
         } else {
-            console.log(row)
+            logger(99, JSON.stringify(row))
             if (row) {
                 setTimeout(() => {
                     axios.get(`https://api.foursquare.com/v2/checkins/${JSON.parse(req.body.checkin).id}`, {
@@ -81,9 +101,9 @@ app.post('/webhook', (req, res) => {
                             accessSecret: row.x_secret
                         });
                         checkin = response.data.response.checkin
-                        console.log(checkin)
+                        logger(99, JSON.stringify(checkin))
                         if (!checkin['shares']) {
-                            console.log("Webhook does not want to share twitter.")
+                            logger(0, "Webhook does not want to share twitter.")
                             res.status(200).send('Webhook received successfully!')
                             return
                         }
@@ -105,7 +125,7 @@ app.post('/webhook', (req, res) => {
                                 }
                             })
                                 .then((response) => {
-                                    console.log(`${p_url.prefix}original${p_url.suffix} Downloaded.`)
+                                    logger(0, `${p_url.prefix}original${p_url.suffix} Downloaded.`)
                                     x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
                                         .then((mediaId) => {
                                             x_client.v2.post('tweets', {
@@ -113,38 +133,38 @@ app.post('/webhook', (req, res) => {
                                                 media: { media_ids: [mediaId] }
                                             }, { fullResponse: true })
                                                 .then((result) => {
-                                                    console.log("Twitter POST Tweet Rate Limit: ", result.rateLimit)
+                                                    logger(0, "Twitter POST Tweet Rate Limit: ", result.rateLimit)
                                                     fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "))
                                                     res.status(200).send('Webhook received successfully!');
                                                 }).catch((err) => {
-                                                    console.log("post_tweet", err)
+                                                    logger(2, "post_tweet", err)
                                                     res.status(400).send('Webhook received failed!')
                                                 })
                                         }).catch((err) => {
-                                            console.log("upload media", err)
+                                            logger(2, "upload media", err)
                                             res.status(400).send('Webhook received failed!')
                                         })
                                 }).catch((err) => {
-                                    console.log("image download", err)
+                                    logger(2, "image download", err)
                                     res.status(400).send('Webhook received failed!')
                                 })
                         } else {
                             x_client.v2.tweet({ text: post_msg })
                                 .then((result) => {
-                                    console.log(result)
+                                    logger(0, result)
                                     res.status(200).send('Webhook received successfully!');
                                 }).catch((err) => {
-                                    console.log("post_tweet", err)
+                                    logger(2, "post_tweet", err)
                                     res.status(400).send('Webhook received failed!')
                                 })
                         }
                     }).catch((err) => {
-                        console.error(err)
+                        logger(2, err)
                         res.status(400).send('Webhook received failed!')
                     })
                 }, 15000)
             } else {
-                console.log('User has not been registered.')
+                logger(1, 'User has not been registered.')
                 res.status(400).send('Webhook received failed!')
             }
         }
@@ -156,12 +176,12 @@ app.get('/ratelimit', (req, res) => {
 })
 
 app.get('/register', (req, res) => {
-    console.log('Received register request.');
+    logger(0, 'Received register request.');
     res.redirect(`https://foursquare.com/oauth2/authenticate?client_id=${process.env.CLIENT_ID}&response_type=code&redirect_uri=${process.env.REDIRECT_URL}`)
 })
 
 app.get('/login', (req, res) => {
-    console.log('Received login request:', req.query);
+    logger(0, 'Received login request:', req.query);
     if (req.query["code"]) {
         axios.get(`https://foursquare.com/oauth2/access_token`, {
             params: {
@@ -173,7 +193,7 @@ app.get('/login', (req, res) => {
             }
         })
             .then((response) => {
-                console.log(response.status)
+                logger(99, JSON.stringify(response.status))
                 let oauth_token = response.data.access_token
                 axios.get('https://api.foursquare.com/v2/users/self', {
                     params: {
@@ -182,7 +202,7 @@ app.get('/login', (req, res) => {
                     }
                 }).then((response) => {
                     db.get("select * from members", (err, row) => {
-                        console.log(row)
+                        logger(99, JSON.stringify(row))
                     })
                     let user_id = response.data.response.user.id
                     req.session.user_id = user_id
@@ -217,8 +237,8 @@ app.get('/xregister', async (req, res) => {
     const authLink = await userClient.generateAuthLink(process.env.X_REDIRECT_URL);
     req.session.oauth_token = authLink.oauth_token
     req.session.oauth_token_secret = authLink.oauth_token_secret
-    console.log(req.session)
-    console.log(authLink.url)
+    logger(0, req.session)
+    logger(0, authLink.url)
     res.redirect(authLink.url)
 })
 
@@ -253,5 +273,5 @@ app.get('/xlogin', async (req, res) => {
 })
 
 app.listen(port, () => {
-    console.log(`Server is running on port ${port} `);
+    logger(0, `Server is running on port ${port} `);
 });
