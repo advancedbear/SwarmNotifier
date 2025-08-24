@@ -11,7 +11,7 @@ const router = express.Router();
 const port = 3000;
 
 const logger = (level, message) => {
-    switch (level) {
+    switch(level) {
         case 0:
             console.log(`[INFO]  ${message}`)
             break
@@ -24,8 +24,8 @@ const logger = (level, message) => {
         case 3:
             console.error(`[CRIT]  ${message}`)
             break
-        default:
-            if (process.env.DEBUGMODE == '1') {
+        default: 
+            if(process.env.DEBUGMODE == '1') {
                 console.log(`[DEBUG] ${message}`)
             }
     }
@@ -79,8 +79,8 @@ app.use(
 );
 
 app.post('/webhook', (req, res) => {
-    if (!req.body.user) logger(1, 'Request is not Foursquare Webhook.')
-    logger(0, 'Received webhook request from user_id:'+ JSON.parse(req.body.user).id);
+    if(!req.body.user) logger(1, 'Request is not Foursquare Webhook.')
+    logger(0, 'Received webhook request from user_id:', JSON.parse(req.body.user).id);
     db.get("select * from members where id = ?", JSON.parse(req.body.user).id, (err, row) => {
         if (err) {
             res.status(400).send('Webhook received failed!')
@@ -117,48 +117,44 @@ app.post('/webhook', (req, res) => {
                             post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}`
                         }
                         if (checkin.photos.count > 0) {
-                            const photos = checkin.photos.items.slice(0, 4)
-                                (async () => {
-                                    try {
-                                        let mediaIds = [];
-                                        for (const p_url of photos) {
-                                            const url = `${p_url.prefix}original${p_url.suffix}`;
-                                            logger(0, `Downloading: ${url}`);
-
-                                            const response = await axios.get(url, {
-                                                responseType: 'arraybuffer',
-                                                headers: { 'Content-Type': 'image/jpeg' }
-                                            });
-
-                                            logger(0, `Downloaded: ${url}`);
-
-                                            const mediaId = await x_client.v1.uploadMedia(
-                                                Buffer.from(response.data),
-                                                { mimeType: 'image/jpeg' }
-                                            );
-
-                                            logger(0, `Uploaded: ${url}, mediaId=${mediaId}`);
-                                            mediaIds.push(mediaId);
-                                        }
-                                        const result = await x_client.v2.post('tweets', {
-                                            text: post_msg,
-                                            media: { media_ids: mediaIds }
-                                        }, { fullResponse: true });
-                                        logger(0, `Twitter POST Tweet Rate Limit: ${JSON.stringify(result.rateLimit)}`);
-                                        fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "));
-                                        res.status(200).send('Webhook received successfully!');
-                                    } catch (err) {
-                                        logger(2, "Error in posting tweet with media" + err);
-                                        res.status(400).send('Webhook received failed!');
-                                    }
-                                })();
+                            let p_url = checkin.photos.items[0]
+                            axios.get(`${p_url.prefix}original${p_url.suffix}`, {
+                                'responseType': 'arraybuffer',
+                                'headers': {
+                                    'Content-Type': 'image/jpeg'
+                                }
+                            })
+                                .then((response) => {
+                                    logger(0, `${p_url.prefix}original${p_url.suffix} Downloaded.`)
+                                    x_client.v1.uploadMedia(Buffer.from(response.data), { mimeType: 'Jpeg' })
+                                        .then((mediaId) => {
+                                            x_client.v2.post('tweets', {
+                                                text: post_msg,
+                                                media: { media_ids: [mediaId] }
+                                            }, { fullResponse: true })
+                                                .then((result) => {
+                                                    logger(0, "Twitter POST Tweet Rate Limit: ", result.rateLimit)
+                                                    fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "))
+                                                    res.status(200).send('Webhook received successfully!');
+                                                }).catch((err) => {
+                                                    logger(2, "post_tweet", err)
+                                                    res.status(400).send('Webhook received failed!')
+                                                })
+                                        }).catch((err) => {
+                                            logger(2, "upload media", err)
+                                            res.status(400).send('Webhook received failed!')
+                                        })
+                                }).catch((err) => {
+                                    logger(2, "image download", err)
+                                    res.status(400).send('Webhook received failed!')
+                                })
                         } else {
                             x_client.v2.tweet({ text: post_msg })
                                 .then((result) => {
                                     logger(0, result)
                                     res.status(200).send('Webhook received successfully!');
                                 }).catch((err) => {
-                                    logger(2, "Error in posting tweet " + err)
+                                    logger(2, "post_tweet", err)
                                     res.status(400).send('Webhook received failed!')
                                 })
                         }
@@ -185,7 +181,7 @@ app.get('/register', (req, res) => {
 })
 
 app.get('/login', (req, res) => {
-    logger(0, 'Received login request:' + req.query);
+    logger(0, 'Received login request:', req.query);
     if (req.query["code"]) {
         axios.get(`https://foursquare.com/oauth2/access_token`, {
             params: {
