@@ -118,6 +118,7 @@ app.post('/webhook', (req, res) => {
                         }
                         if (checkin.photos.count > 0) {
                             const photos = checkin.photos.items.slice(0, 4)
+                            let mediaIds = [];
                             photos.reduce((prevPromise, p_url) => {
                                 return prevPromise.then(() => {
                                     const url = `${p_url.prefix}original${p_url.suffix}`;
