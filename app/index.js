@@ -11,7 +11,7 @@ const router = express.Router();
 const port = 3000;
 
 const logger = (level, message) => {
-    switch (level) {
+    switch(level) {
         case 0:
             console.log(`[INFO]  ${message}`)
             break
@@ -24,8 +24,8 @@ const logger = (level, message) => {
         case 3:
             console.error(`[CRIT]  ${message}`)
             break
-        default:
-            if (process.env.DEBUGMODE == '1') {
+        default: 
+            if(process.env.DEBUGMODE == '1') {
                 console.log(`[DEBUG] ${message}`)
             }
     }
@@ -81,6 +81,7 @@ app.use(
 app.post('/webhook', (req, res) => {
     if (!req.body.user) logger(1, 'Request is not Foursquare Webhook.')
     logger(0, 'Received webhook request from user_id:' + JSON.parse(req.body.user).id);
+
     db.get("select * from members where id = ?", JSON.parse(req.body.user).id, (err, row) => {
         if (err) {
             res.status(400).send('Webhook received failed!')
@@ -153,13 +154,14 @@ app.post('/webhook', (req, res) => {
                                     logger(2, "Error in posting tweet with media " + err);
                                     res.status(400).send('Webhook received failed!');
                                 });
+
                         } else {
                             x_client.v2.tweet({ text: post_msg })
                                 .then((result) => {
                                     logger(0, result)
                                     res.status(200).send('Webhook received successfully!');
                                 }).catch((err) => {
-                                    logger(2, "Error in posting tweet " + err)
+                                    logger(2, "post_tweet", err)
                                     res.status(400).send('Webhook received failed!')
                                 })
                         }
@@ -186,7 +188,7 @@ app.get('/register', (req, res) => {
 })
 
 app.get('/login', (req, res) => {
-    logger(0, 'Received login request:' + req.query);
+    logger(0, 'Received login request:', req.query);
     if (req.query["code"]) {
         axios.get(`https://foursquare.com/oauth2/access_token`, {
             params: {
