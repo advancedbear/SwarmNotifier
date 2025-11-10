@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs")
 const sqlite3 = require("sqlite3");
 const axios = require("axios").default;
-const { TwitterApi } = require('twitter-api-v2')
+const { TwitterApi, SendTweetV2Params } = require('twitter-api-v2')
 const app = express();
 const router = express.Router();
 const port = 3000;
@@ -119,42 +119,33 @@ app.post('/webhook', (req, res) => {
                         }
                         if (checkin.photos.count > 0) {
                             const photos = checkin.photos.items.slice(0, 4)
-                            let mediaIds = [];
-                            photos.reduce((prevPromise, p_url) => {
-                                return prevPromise.then(() => {
-                                    const url = `${p_url.prefix}original${p_url.suffix}`;
-                                    logger(0, `Downloading check-in photo: ${url}`);
-                                    return axios.get(url, {
-                                        responseType: 'arraybuffer',
-                                        headers: { 'Content-Type': 'image/jpeg' }
-                                    }).then(response => {
-                                        logger(0, `Downloaded check-in photo: ${url}`);
-                                        return x_client.v1.uploadMedia(
-                                            Buffer.from(response.data),
-                                            { mimeType: 'image/jpeg' }
-                                        );
-                                    }).then(mediaId => {
-                                        logger(0, `Uploaded check-in photo: ${url}, mediaId=${mediaId}`);
-                                        mediaIds.push(mediaId);
-                                    });
+                            Promise.all(photos.map(async (p_url) => {
+                                const url = `${p_url.prefix}original${p_url.suffix}`;
+                                logger(0, `Downloading check-in photo: ${url}`);
+                                const response = await axios.get(url, {
+                                    responseType: 'arraybuffer',
+                                    headers: { 'Content-Type': 'image/jpeg' }
                                 });
-                            }, Promise.resolve())
-                                .then(() => {
-                                    return x_client.v2.post('tweets', {
-                                        text: post_msg,
-                                        media: { media_ids: mediaIds }
-                                    }, { fullResponse: true });
-                                })
-                                .then(result => {
-                                    logger(0, `Twitter POST Tweet Rate Limit: ${JSON.stringify(result.rateLimit)}`);
-                                    fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "));
-                                    res.status(200).send('Webhook received successfully!');
-                                })
-                                .catch(err => {
-                                    logger(2, "Error in posting tweet with media " + err);
-                                    res.status(400).send('Webhook received failed!');
-                                });
-
+                                logger(0, `Downloaded check-in photo: ${url}`);
+                                const mediaId = await x_client.v1.uploadMedia(
+                                    Buffer.from(response.data),
+                                    { mimeType: 'image/jpeg' }
+                                );
+                                logger(0, `Uploaded check-in photo: ${url}, mediaId=${mediaId}`);
+                                return mediaId;
+                            })).then((mediaIds) => {
+                                return x_client.v2.post('tweets', {
+                                    text: post_msg,
+                                    media: { media_ids: mediaIds }
+                                }, { fullResponse: true });
+                            }).then(result => {
+                                logger(0, `Twitter POST Tweet Rate Limit: ${JSON.stringify(result.rateLimit)}`);
+                                fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "));
+                                res.status(200).send('Webhook received successfully!');
+                            }).catch(err => {
+                                logger(2, "Error in posting tweet with media " + err);
+                                res.status(400).send('Webhook received failed!');
+                            });
                         } else {
                             x_client.v2.tweet({ text: post_msg })
                                 .then((result) => {
