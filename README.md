@@ -101,3 +101,25 @@ $ docker compose up -d
 ```
 $ docker compose logs
 ```
+
+## アップデート方法
+### 1. リポジトリを更新する
+以下コマンドを実行し、リポジトリを更新します。
+
+```
+$ git pull
+```
+
+### 2. Dockerイメージを更新する
+以下コマンドを実行し、Dockerコンテナイメージを最新化します。
+
+```
+$ docker compose build
+```
+
+### 3. Dockerコンテナを再起動する
+以下コマンドを実行し、Dockerコンテナを再起動します。
+
+```
+$ docker compose up -d
+```
