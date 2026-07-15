@@ -103,11 +103,11 @@ app.post('/webhook', (req, res) => {
                         });
                         checkin = response.data.response.checkin
                         logger(99, JSON.stringify(checkin))
-                        if (!checkin['shares']) {
-                            logger(0, "Webhook does not want to share twitter.")
-                            res.status(200).send('Webhook received successfully!')
-                            return
-                        }
+                        // if (!checkin['shares']) {
+                        //     logger(0, "Webhook does not want to share twitter.")
+                        //     res.status(200).send('Webhook received successfully!')
+                        //     return
+                        // }
                         location = ""
                         if (checkin.venue.location.state) {
                             location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city : ""}`
