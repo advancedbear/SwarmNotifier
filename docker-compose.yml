@@ -9,12 +9,10 @@ services:
     - "3000:3000"
     volumes:
     - ".env:/app/.env:ro"
-    - db_data:/app/main.db
+    - "./main.db:/app/main.db"
   tunnel:
     restart: always
     image: cloudflare/cloudflared
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=*****************
-volumes:
-  db_data:
