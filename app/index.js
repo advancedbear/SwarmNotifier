@@ -103,11 +103,11 @@ app.post('/webhook', (req, res) => {
                         });
                         checkin = response.data.response.checkin
                         logger(99, JSON.stringify(checkin))
-                        // if (!checkin['shares']) {
-                        //     logger(0, "Webhook does not want to share twitter.")
-                        //     res.status(200).send('Webhook received successfully!')
-                        //     return
-                        // }
+                        if (checkin['private']) {
+                            logger(0, "Webhook does not want to share twitter.")
+                            res.status(200).send('Webhook received successfully!')
+                            return
+                        }
                         location = ""
                         if (checkin.venue.location.state) {
                             location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city : ""}`
@@ -158,7 +158,8 @@ app.post('/webhook', (req, res) => {
                         } else {
                             x_client.v2.tweet({ text: post_msg })
                                 .then((result) => {
-                                    logger(0, result)
+                                    logger(0, `Twitter POST Tweet Rate Limit: ${JSON.stringify(result.rateLimit)}`);
+                                    fs.writeFileSync('ratelimit.json', JSON.stringify(result.rateLimit, null, "  "));
                                     res.status(200).send('Webhook received successfully!');
                                 }).catch((err) => {
                                     logger(2, "post_tweet", err)
