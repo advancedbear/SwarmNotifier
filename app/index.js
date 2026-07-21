@@ -94,7 +94,7 @@ app.post('/webhook', (req, res) => {
                             v: "20241201",
                             oauth_token: row.fsq_token
                         }
-                    }).then((response) => {
+                    }).then(async (response) => {
                         const x_client = new TwitterApi({
                             appKey: process.env.X_CLIENT_ID,
                             appSecret: process.env.X_CLIENT_SECRET,
@@ -108,14 +108,21 @@ app.post('/webhook', (req, res) => {
                             res.status(200).send('Webhook received successfully!')
                             return
                         }
+                        venueResponse = await axios.get(`https://api.foursquare.com/v2/venues/${checkin.venue.id}`, {
+                            params: {
+                                v: "20241201",
+                                oauth_token: row.fsq_token
+                            }
+                        })
+                        checkin.venue = venueResponse.data.response.venue
                         location = ""
                         if (checkin.venue.location.state) {
-                            location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city : ""}`
+                            location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city : checkin.venue.parent?.location?.city ? checkin.venue.parent.location.city : ""} ${checkin.venue.location.country != "日本" ? ", " + checkin.venue.location.country : ""}`
                         }
                         if (checkin['shout']) {
-                            post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
+                            post_msg = `I'm at ${checkin.venue.name}${checkin.venue.parent ? " (" + checkin.venue.parent.name + ")" : ""} ${location}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
                         } else {
-                            post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}`
+                            post_msg = `I'm at ${checkin.venue.name}${checkin.venue.parent ? " (" + checkin.venue.parent.name + ")" : ""} ${location}\n${checkin.checkinShortUrl}`
                         }
                         if (checkin.photos.count > 0) {
                             const photos = checkin.photos.items.slice(0, 4)
