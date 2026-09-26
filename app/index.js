@@ -113,9 +113,9 @@ app.post('/webhook', (req, res) => {
                             location = `in ${checkin.venue.location.state} ${checkin.venue.location.city ? checkin.venue.location.city : ""}`
                         }
                         if (checkin['shout']) {
-                            post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}\n\n${checkin.shout}`
+                            post_msg = `I'm at ${checkin.venue.name} ${location}\n#SwarmNotifier\n\n${checkin.shout}`
                         } else {
-                            post_msg = `I'm at ${checkin.venue.name} ${location}\n${checkin.checkinShortUrl}`
+                            post_msg = `I'm at ${checkin.venue.name} ${location}\n#SwarmNotifier`
                         }
                         if (checkin.photos.count > 0) {
                             const photos = checkin.photos.items.slice(0, 4)
